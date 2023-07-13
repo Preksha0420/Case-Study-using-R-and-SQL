@@ -1,6 +1,6 @@
 ## Case-Study-using-R-and-SQL
 
-#Objectives
+# Objectives
 
 -Gain familiarity with clinical and financial information commonly found in healthcare provider databases.
 
