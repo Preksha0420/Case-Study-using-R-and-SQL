@@ -1,1 +1,1 @@
-# Case-Study-using-R
+# Case-Study-using-R-and-SQL
