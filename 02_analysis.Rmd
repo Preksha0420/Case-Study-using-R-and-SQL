@@ -1,0 +1,956 @@
+---
+title: "HMP 669 Project - Analysis"
+author: "Group 4"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+## Load libraries
+
+```{r}
+library(ggplot2)
+library(plyr)
+library(reshape2)
+library(knitr)
+library(binom) 
+library(purrr)
+library(forcats)
+library(dplyr)
+```
+
+## Load data
+
+```{r}
+omega = read.csv("omega.csv")
+omega_cardio = read.csv("omega_cardio.csv")
+omega_ortho = read.csv("omega_ortho.csv")
+omega_other = read.csv("omega_other.csv")
+omega_serv = read.csv("omega_serv.csv")
+crit = read.csv("crit_cleaned.csv")
+ome_dx = read.csv("ome_dx_cleaned.csv")
+ome_px = read.csv("ome_px_cleaned.csv")
+```
+
+## I. Assessment of the overall patient population and current facility services
+
+#### Top (10) disease entities treated by each group and number of patients in each of these disease entities
+
+```{r}
+# cardiac
+cardiac_top_disease = omega_cardio %>% 
+  group_by(DIAG_DESC) %>% 
+  dplyr::summarise(count = n(),
+                   prop = n()/nrow(omega_cardio) * 100) %>% 
+  arrange(desc(count)) %>% 
+  top_n(10)
+kable(cardiac_top_disease, digits = 2, col.names = c("Cardiac condition", "Number of patients", "Percentage of patients"))
+
+# orthopedic
+ortho_top_disease = omega_ortho %>% 
+  group_by(DIAG_DESC) %>% 
+  dplyr::summarise(count = n(),
+                   prop = n()/nrow(omega_ortho) * 100) %>% 
+  arrange(desc(count)) %>% 
+  top_n(10)
+kable(ortho_top_disease, digits = 2, col.names = c("Orthopedic condition", "Number of patients", "Percentage of patients"))
+```
+
+#### Number of patients admitted for cardiac and orthopedic services
+
+```{r}
+num_pat = omega_serv %>% 
+  group_by(SERVICE) %>% 
+  dplyr::summarise(count = n(),
+                   perc = n()/nrow(omega) * 100)
+
+num_pat_co = num_pat %>% 
+  filter(SERVICE %in% c("Cardiology", "Orthopedic"))
+kable(num_pat_co, digits = 2, col.names = c("Service", "Number of patients", "Percentage of patients"))
+
+ggplot(data = num_pat, 
+       mapping = aes(x = reorder(SERVICE, perc), y = perc, fill = SERVICE)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Percentage of patients by service") + 
+  xlab("Service") + 
+  ylab("Percentage of patients") + 
+  scale_fill_manual(values = c(rep("darkgrey", 3), "red", rep("darkgrey", 13), "dodgerblue", rep("darkgrey", 9))) + 
+  guides(fill = FALSE) + 
+  coord_flip() + 
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+#### Demographics of patient groups
+
+**Age**
+
+```{r}
+avg_age = omega_serv %>% 
+  group_by(SERVICE) %>% 
+  dplyr::summarise(avg_age = mean(AGE, na.rm = TRUE))
+
+avg_age_co = avg_age %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic"))
+kable(avg_age_co, digits = 2, col.names = c("Service", "Average age of patients"))
+
+ggplot(data = avg_age, 
+       mapping = aes(x = reorder(SERVICE, avg_age), y = avg_age, fill = SERVICE)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Average age of patients by service") + 
+  xlab("Service") + 
+  ylab("Average age of patients") + 
+  scale_fill_manual(values = c(rep("darkgrey", 3), "red", rep("darkgrey", 13), "dodgerblue", rep("darkgrey", 9))) + 
+  guides(fill = FALSE) + 
+  coord_flip() + 
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  geom_hline(yintercept = mean(omega_serv$AGE), lty = 2, col = "black")
+```
+
+\newpage
+
+**Race**
+
+```{r}
+# cardio                                                                                      
+cardio_race = omega_cardio %>% 
+  group_by(RACE) %>% 
+  dplyr::summarise(count = n())
+cardio_race$perc = cardio_race$count/nrow(omega_cardio) * 100
+kable(cardio_race, digits = 2, col.names = c("Race", "Number of patients", "Percentage of patients"))
+
+# ortho
+ortho_race = omega_ortho %>% 
+  group_by(RACE) %>% 
+  dplyr::summarise(count = n())
+ortho_race$perc = ortho_race$count/nrow(omega_ortho) * 100
+kable(ortho_race, digits = 2, col.names = c("Race", "Number of patients", "Percentage of patients"))
+
+race = omega_serv %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic")) %>%
+  group_by(SERVICE, RACE) %>%
+  dplyr::summarise(count = n())
+race$perc = ifelse(race$SERVICE == "Cardiology", race$count/nrow(omega_cardio) * 100, race$count/nrow(omega_ortho) * 100)
+
+ggplot(data = race, 
+       mapping = aes(x = SERVICE, y = perc, fill = as.factor(RACE))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  ggtitle("Percentage of patients by race by service") +
+  xlab("Service") +
+  ylab("Percentage of patients") +
+  scale_fill_discrete(name = "Race", lab = c("Asiatic", "Black", "Other", "Unknown", "White")) +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+**Gender**
+
+```{r}
+# cardio
+cardio_gender = omega_cardio %>% 
+  group_by(SEX) %>% 
+  dplyr::summarise(count = n())
+cardio_gender$perc = cardio_gender$count/nrow(omega_cardio) * 100
+kable(cardio_gender, digits = 2, col.names = c("Gender", "Number of patients", "Percentage of patients"))
+
+# ortho
+ortho_gender = omega_ortho %>% 
+  group_by(SEX) %>% 
+  dplyr::summarise(count = n())
+ortho_gender$perc = ortho_gender$count/nrow(omega_ortho) * 100
+kable(ortho_gender, digits = 2, col.names = c("Gender", "Number of patients", "Percentage of patients"))
+
+gender = omega_serv %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic")) %>%
+  group_by(SERVICE, SEX) %>%
+  dplyr::summarise(count = n())
+gender$perc = ifelse(gender$SERVICE == "Cardiology", gender$count/nrow(omega_cardio) * 100, gender$count/nrow(omega_ortho) * 100)
+
+ggplot(data = gender, 
+       mapping = aes(x = SERVICE, y = perc, fill = as.factor(SEX))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  ggtitle("Percentage of patients by gender by service") +
+  xlab("Service") +
+  ylab("Percentage of patients") +
+  scale_fill_discrete(name = "Gender", lab = c("Female", "Male")) +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+**Distance**
+
+```{r}
+dist_filt = omega_serv %>% filter(DISTANCE < 65535)
+avg_dist = omega_serv %>% 
+  filter(DISTANCE < 65535) %>%
+  group_by(SERVICE) %>% 
+  dplyr::summarise(avg_dist = mean(DISTANCE, na.rm = TRUE))
+
+avg_dist_co = avg_dist %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic"))
+kable(avg_dist_co, digits = 2, col.names = c("Service", "Average distance traveled to Omega"))
+
+ggplot(data = avg_dist, 
+       mapping = aes(x = reorder(SERVICE, avg_dist), y = avg_dist, fill = SERVICE)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Average distance traveled to Omega by service") + 
+  xlab("Service") + 
+  ylab("Average distance traveled") + 
+  scale_fill_manual(values = c(rep("darkgrey", 3), "red", rep("darkgrey", 13), "dodgerblue", rep("darkgrey", 9))) + 
+  guides(fill = FALSE) + 
+  coord_flip() + 
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  geom_hline(yintercept = mean(dist_filt$DISTANCE), lty = 2, col = "black")
+```
+
+\newpage
+
+#### Relevant admission/discharge data
+
+**Admission**
+
+```{r}
+# cardio
+cardio_adm = omega_cardio %>% 
+  group_by(ADM_SVC_DESCRIPT) %>% 
+  dplyr::summarise(count = n())
+cardio_adm$perc = cardio_adm$count/nrow(omega_cardio) * 100
+kable(cardio_adm, digits = 2, col.names = c("Admission description", "Number of patients", "Percentage of patients"))
+
+# ortho
+ortho_adm = omega_ortho %>% 
+  group_by(ADM_SVC_DESCRIPT) %>% 
+  dplyr::summarise(count = n())
+ortho_adm$perc = ortho_adm$count/nrow(omega_ortho) * 100
+kable(ortho_adm, digits = 2, col.names = c("Admission description", "Number of patients", "Percentage of patients"))
+
+adm = omega_serv %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic")) %>%
+  group_by(SERVICE, ADM_SVC_DESCRIPT) %>%
+  dplyr::summarise(count = n())
+adm$perc = ifelse(adm$SERVICE == "Cardiology", adm$count/nrow(omega_cardio) * 100, adm$count/nrow(omega_ortho) * 100)
+
+ggplot(data = adm, 
+       mapping = aes(x = SERVICE, y = perc, fill = as.factor(ADM_SVC_DESCRIPT))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  ggtitle("Percentage of patients by admission description by service") +
+  xlab("Service") +
+  ylab("Percentage of patients") +
+  scale_fill_discrete(name = "Admission description", lab = c("General Surgery", "Gynecology", "Internal Medicine", "Pediatrics", "Rehabilitation")) +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+\newpage
+
+**Discharge**
+
+```{r}
+# cardio
+cardio_disch = omega_cardio %>% 
+  group_by(DIS_SVC_DESCRIPT) %>% 
+  dplyr::summarise(count = n())
+cardio_disch$perc = cardio_disch$count/nrow(omega_cardio) * 100
+kable(cardio_disch, digits = 2, col.names = c("Discharge description", "Number of patients", "Percentage of patients"))
+
+# ortho
+ortho_disch = omega_ortho %>% 
+  group_by(DIS_SVC_DESCRIPT) %>% 
+  dplyr::summarise(count = n())
+ortho_disch$perc = ortho_disch$count/nrow(omega_ortho) * 100
+kable(ortho_disch, digits = 2, col.names = c("Discharge description", "Number of patients", "Percentage of patients"))
+
+disch = omega_serv %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic")) %>%
+  group_by(SERVICE, DIS_SVC_DESCRIPT) %>%
+  dplyr::summarise(count = n())
+disch$perc = ifelse(disch$SERVICE == "Cardiology", disch$count/nrow(omega_cardio) * 100, disch$count/nrow(omega_ortho) * 100)
+
+ggplot(data = disch, 
+       mapping = aes(x = SERVICE, y = perc, fill = as.factor(DIS_SVC_DESCRIPT))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  ggtitle("Percentage of patients by discharge description by service") +
+  xlab("Service") +
+  ylab("Percentage of patients") +
+  scale_fill_discrete(name = "Discharge description", lab = c("General Surgery", "Gynecology", "Internal Medicine", "Pediatrics", "Rehabilitation")) +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+\newpage
+
+**Disposition**
+
+```{r}
+# cardio
+cardio_disp = omega_cardio %>% 
+  group_by(DISPOSTN_DESCRIPT) %>% 
+  dplyr::summarise(count = n())
+cardio_disp$perc = cardio_disp$count/nrow(omega_cardio) * 100
+kable(cardio_disp, digits = 2, col.names = c("Disposition description", "Number of patients", "Percentage of patients"))
+
+# ortho
+ortho_disp = omega_ortho %>% 
+  group_by(DISPOSTN_DESCRIPT) %>% 
+  dplyr::summarise(count = n())
+ortho_disp$perc = ortho_disp$count/nrow(omega_ortho) * 100
+kable(ortho_disp, digits = 2, col.names = c("Disposition description", "Number of patients", "Percentage of patients"))
+
+disp = omega_serv %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic")) %>%
+  group_by(SERVICE, DISPOSTN_DESCRIPT) %>%
+  dplyr::summarise(count = n())
+disp$perc = ifelse(disp$SERVICE == "Cardiology", disp$count/nrow(omega_cardio) * 100, disp$count/nrow(omega_ortho) * 100)
+
+ggplot(data = disp, 
+       mapping = aes(x = SERVICE, y = perc, fill = as.factor(DISPOSTN_DESCRIPT))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  ggtitle("Percentage of patients by disposition description by service") +
+  xlab("Service") +
+  ylab("Percentage of patients") +
+  scale_fill_discrete(name = "Disposition description", 
+                      lab = c("Adult foster care/group home",
+                              "Against medical advice",
+                              "Died",
+                              "Home health care or home hospice care",
+                              "Home/routine",
+                              "Intermediate care facility",
+                              "Other facility",
+                              "Skilled nursing facility",
+                              "Transferred to another acute short term hospital",
+                              "Transferred to LT psych from other system facility",
+                              "Transferred to Omega from other system facility",
+                              "Transferred to physician rehab other than Omega",
+                              "Transferred to rehab from other system facility")) +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+#### LOS information
+
+```{r}
+avg_los = omega_serv %>% 
+  group_by(SERVICE) %>% 
+  dplyr::summarise(avg_los = mean(LOS, na.rm = TRUE))
+
+avg_los_co = avg_los %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic"))
+kable(avg_los_co, digits = 2, col.names = c("Service", "Average LOS"))
+
+ggplot(data = avg_los, 
+       mapping = aes(x = reorder(SERVICE, avg_los), y = avg_los, fill = SERVICE)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Average LOS by service") + 
+  xlab("Service") + 
+  ylab("Average LOS") + 
+  scale_fill_manual(values = c(rep("darkgrey", 3), "red", rep("darkgrey", 13), "dodgerblue", rep("darkgrey", 9))) + 
+  guides(fill = FALSE) + 
+  coord_flip() + 
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  geom_hline(yintercept = mean(omega_serv$LOS), lty = 2)
+```
+
+## II. Intensity/utilization indicators
+
+#### Reputation: how far do these patients travel to receive cardiac and orthopedic services compared to other services?
+
+```{r}
+dist_filt = omega_serv %>% filter(DISTANCE < 65535)
+avg_dist = omega_serv %>% 
+  group_by(SERVICE) %>% 
+  filter(DISTANCE < 65535) %>%
+  dplyr::summarise(avg_dist = mean(DISTANCE, na.rm = TRUE))
+
+avg_dist_co = avg_dist %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic"))
+kable(avg_dist_co, digits = 2, col.names = c("Service", "Average distance traveled to Omega"))
+
+ggplot(data = avg_dist, 
+       mapping = aes(x = reorder(SERVICE, avg_dist), y = avg_dist, fill = SERVICE)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Average distance traveled to Omega by service") + 
+  xlab("Service") + 
+  ylab("Average distance traveled") + 
+  scale_fill_manual(values = c(rep("darkgrey", 3), "red", rep("darkgrey", 13), "dodgerblue", rep("darkgrey", 9))) + 
+  guides(fill = FALSE) + 
+  coord_flip() + 
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  geom_hline(yintercept = mean(dist_filt$DISTANCE), lty = 2)
+```
+
+#### Death rate
+
+**Within 48 hours**
+
+```{r}
+omega_serv$DIED_WI_48 = ifelse(omega_serv$DIED_WI_48 == 1, 1, 0)
+
+dw48 = omega_serv %>% 
+  group_by(SERVICE) %>% 
+  dplyr::summarise(dw48 = mean(DIED_WI_48, na.rm = TRUE)*100)
+
+dw48_co = dw48 %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic"))
+kable(dw48_co, digits = 2, col.names = c("Service", "Death rate within 48 hours"))
+
+ggplot(data = dw48, 
+       mapping = aes(x = reorder(SERVICE, dw48), y = dw48, fill = SERVICE)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Death rate within 48 hours by service") + 
+  xlab("Service") + 
+  ylab("Death rate within 48 hours") + 
+  scale_fill_manual(values = c(rep("darkgrey", 3), "red", rep("darkgrey", 13), "dodgerblue", rep("darkgrey", 9))) + 
+  guides(fill = FALSE) + 
+  coord_flip() + 
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  geom_hline(yintercept = mean(omega_serv$DIED_WI_48, na.rm = TRUE)*100, lty = 2)
+```
+
+**In OR**
+
+```{r}
+omega_serv$DIED_IN_OR = ifelse(omega_serv$DIED_IN_OR == 1, 1, 0)
+
+dor = omega_serv %>% 
+  group_by(SERVICE) %>% 
+  dplyr::summarise(dor = mean(DIED_IN_OR, na.rm = TRUE)*100)
+
+dor_co = dor %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic"))
+kable(dor_co, digits = 2, col.names = c("Service", "Death rate in OR"))
+
+ggplot(data = dor, 
+       mapping = aes(x = reorder(SERVICE, dor), y = dor, fill = SERVICE)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Death rate in OR by service") + 
+  xlab("Service") + 
+  ylab("Death rate in OR") + 
+  scale_fill_manual(values = c(rep("black", 3), "red", rep("black", 13), "dodgerblue", rep("black", 9))) + 
+  guides(fill = FALSE) + 
+  coord_flip() +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+**Post-operative**
+
+```{r}
+omega_serv$DIED_PSTOP = ifelse(omega_serv$DIED_PSTOP == 1, 1, 0)
+
+pstop = omega_serv %>% 
+  group_by(SERVICE) %>% 
+  dplyr::summarise(pstop = mean(DIED_PSTOP, na.rm = TRUE)*100)
+
+pstop_co = pstop %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic"))
+kable(pstop_co, digits = 2, col.names = c("Service", "Post-operative death rate"))
+
+ggplot(data = pstop, 
+       mapping = aes(x = reorder(SERVICE, pstop), y = pstop, fill = SERVICE)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Post-operative death rate by service") + 
+  xlab("Service") + 
+  ylab("Post-operative death rate") + 
+  scale_fill_manual(values = c(rep("darkgrey", 3), "red", rep("darkgrey", 13), "dodgerblue", rep("darkgrey", 9))) + 
+  guides(fill = FALSE) + 
+  coord_flip() + 
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  geom_hline(yintercept = mean(omega_serv$DIED_PSTOP, na.rm = TRUE)*100, lty = 2)
+```
+
+**On arrival**
+
+```{r}
+omega_serv$DOA = ifelse(omega_serv$DOA == 1, 1, 0)
+
+doa = omega_serv %>% 
+  group_by(SERVICE) %>% 
+  dplyr::summarise(doa = mean(DOA, na.rm = TRUE)*100)
+
+doa_co = doa %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic"))
+kable(doa_co, digits = 2, col.names = c("Service", "Death rate on arrival"))
+
+ggplot(data = doa, 
+       mapping = aes(x = reorder(SERVICE, doa), y = doa, fill = SERVICE)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Death upon arrival rate by service") + 
+  xlab("Service") + 
+  ylab("Death upon arrival rate") + 
+  scale_fill_manual(values = c(rep("black", 3), "red", rep("black", 13), "dodgerblue", rep("black", 9))) + 
+  guides(fill = FALSE) + 
+  coord_flip() +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+**in ER**
+
+```{r}
+omega_serv$ER_DEATH = ifelse(omega_serv$ER_DEATH == 1, 1, 0)
+
+er = omega_serv %>% 
+  group_by(SERVICE) %>% 
+  dplyr::summarise(er = mean(ER_DEATH, na.rm = TRUE)*100)
+
+er_co = er %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic"))
+kable(er_co, digits = 2, col.names = c("Service", "Death in ER rate"))
+
+ggplot(data = er, 
+       mapping = aes(x = reorder(SERVICE, er), y = er, fill = SERVICE)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Death in ER rate by service") + 
+  xlab("Service") + 
+  ylab("Death in ER rate") + 
+  scale_fill_manual(values = c(rep("black", 3), "red", rep("black", 13), "dodgerblue", rep("black", 9))) + 
+  guides(fill = FALSE) + 
+  coord_flip() +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+**Overall**
+
+```{r}
+omega_serv$DEATH = ifelse(omega_serv$DIED_IN_OR == 1 | omega_serv$DIED_PSTOP == 1 | omega_serv$DIED_WI_48 == 1 | omega_serv$DOA == 1 | omega_serv$ER_DEATH == 1, 1, 0)
+
+death = omega_serv %>% 
+  group_by(SERVICE) %>% 
+  dplyr::summarise(death = mean(DEATH, na.rm = TRUE)*100)
+
+death_co = death %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic"))
+kable(death_co, digits = 2, col.names = c("Service", "Overall death rate"))
+
+ggplot(data = death, 
+       mapping = aes(x = reorder(SERVICE, death), y = death, fill = SERVICE)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Overall death rate by service") + 
+  xlab("Service") + 
+  ylab("Overall death rate")  + 
+  scale_fill_manual(values = c(rep("darkgrey", 3), "red", rep("darkgrey", 13), "dodgerblue", rep("darkgrey", 9))) + 
+  guides(fill = FALSE) + 
+  coord_flip() + 
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  geom_hline(yintercept = mean(omega_serv$DEATH, na.rm = TRUE)*100, lty = 2)
+```
+
+#### Percent of encounters where service provided was teaching-related
+
+```{r}
+omega_serv$TEACH_SVC = ifelse(omega_serv$TEACH_SVC == "TEACHING", 1, 0)
+
+teach = omega_serv %>% 
+  group_by(SERVICE) %>% 
+  dplyr::summarise(teach = mean(TEACH_SVC)*100)
+
+teach_co = teach %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic"))
+kable(teach_co, digits = 2, col.names = c("Service", "Percent of teaching-related encounters"))
+
+ggplot(data = teach, 
+       mapping = aes(x = reorder(SERVICE, teach), y = teach, fill = SERVICE)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Percent of teaching-related encounters by service") + 
+  xlab("Service") + 
+  ylab("Percent of teaching-related encounters") + 
+  scale_fill_manual(values = c(rep("darkgrey", 3), "red", rep("darkgrey", 13), "dodgerblue", rep("darkgrey", 9))) + 
+  guides(fill = FALSE) + 
+  coord_flip() +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  geom_hline(yintercept = mean(omega_serv$TEACH_SVC, na.rm = TRUE)*100, lty = 2)
+```
+
+#### Physician/surgeon information (e.g., admitting physician, specialty type, operating surgeon)
+
+```{r}
+physician = omega_serv %>% 
+  group_by(PHYS_A_SPC_DESCRIPT) %>%
+  dplyr::summarise(avg.charge = mean(TOT_CHARGE, na.rm = TRUE))
+phys_co = physician %>%
+  filter(PHYS_A_SPC_DESCRIPT %in% c("CARDIOLOGY", "ORTHOPEDICS"))
+kable(phys_co, digits = 2, col.names = c("Physician specialty", "Average total charge"))
+
+ggplot(data = physician, 
+       mapping = aes(x = reorder(PHYS_A_SPC_DESCRIPT, avg.charge), y = avg.charge, fill = PHYS_A_SPC_DESCRIPT)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Average total charge by physician specialty") + 
+  xlab("Physician specialty") + 
+  ylab("Average total charge") + 
+  scale_fill_manual(values = c(rep("darkgrey", 3), "red", rep("darkgrey", 13), "dodgerblue", rep("darkgrey", 9))) + 
+  guides(fill = FALSE) + 
+  coord_flip() +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  geom_hline(yintercept = mean(omega_serv$TOT_CHARGE, na.rm = TRUE), lty = 2)
+```
+
+#### Percent of visits requiring an external review
+
+```{r}
+omega_serv$REQ_EXT_REV = ifelse(omega_serv$EXT_REV > 0, 1, 0)
+
+ext_rev = omega_serv %>% 
+  group_by(SERVICE) %>% 
+  dplyr::summarise(ext_rev = mean(EXT_REV)*100)
+
+ext_rev_co = ext_rev %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic"))
+kable(ext_rev_co, digits = 2, col.names = c("Service", "Percent of visits requiring external review"))
+
+ggplot(data = ext_rev, 
+       mapping = aes(x = reorder(SERVICE, ext_rev), y = ext_rev, fill = SERVICE)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Percent of visits requiring an external review by service") + 
+  xlab("Service") + 
+  ylab("Percent of visits requiring an external review") + 
+  scale_fill_manual(values = c(rep("darkgrey", 3), "red", rep("darkgrey", 13), "dodgerblue", rep("darkgrey", 9))) + 
+  guides(fill = FALSE) + 
+  coord_flip() + 
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  geom_hline(yintercept = mean(omega_serv$REQ_EXT_REV, na.rm = TRUE)*100, lty = 2)
+```
+
+#### ICU/CCU information
+
+```{r}
+omega_crit = omega[,c("PAT_NO", "ADM_DATE", "DIS_DATE", "SERVICE")]
+crit = merge(crit, omega_crit, by = c("PAT_NO", "ADM_DATE", "DIS_DATE"), all.x = TRUE)
+crit_num = crit %>% 
+  group_by(SERVICE) %>% 
+  dplyr::summarise(num = n())
+omega_num = omega %>% group_by(SERVICE) %>% dplyr::summarise(count = n())
+crit_count = merge(crit_num, omega_num, by = "SERVICE")
+
+crit_count$prop = crit_count$num/crit_count$count * 100
+crit_count = na.omit(crit_count)
+
+crit_count_co = crit_count %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic")) %>%
+  select("SERVICE", "prop")
+kable(crit_count_co, digits = 2, col.names = c("Service", "Percent of visits with ICU stay"))
+```
+
+```{r}
+ggplot(data = crit_count, 
+       mapping = aes(x = reorder(SERVICE, prop), y = prop, fill = SERVICE)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Percent of visits requiring ICU stay") + 
+  xlab("Service") + 
+  ylab("Percent of visits requiring ICU stay") + 
+  scale_fill_manual(values = c(rep("darkgrey", 3), "red", rep("darkgrey", 12), "dodgerblue", rep("darkgrey", 10))) + 
+  guides(fill = FALSE) + 
+  coord_flip() + 
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  geom_hline(yintercept = (sum(crit_count$num)/sum(crit_count$count))*100, lty = 2)
+```
+
+```{r}
+new_omega = crit %>% inner_join(omega_serv)
+CCU_COUNTS = table(new_omega$ICU)/nrow(new_omega)*100
+
+plot = new_omega %>% 
+  group_by(SERVICE, ICU) %>% 
+  dplyr::summarise(avg_ICU_LOS = mean(ICU_LOS)) %>% 
+  arrange(desc(avg_ICU_LOS))
+total_length = plot %>% group_by(SERVICE) %>% dplyr::summarise(tot = sum(avg_ICU_LOS))
+plot = merge(plot, total_length, by = "SERVICE")
+
+plot %>%
+  ggplot(aes(x = reorder(SERVICE, tot), y = avg_ICU_LOS, fill = ICU)) +
+  coord_flip() +
+  geom_bar(stat = "identity")+
+   labs(x = "Service", y = "Average ICU length of stay", title = "Average length of stay by service in the ICU")+
+    theme(panel.background = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "black"),
+        legend.background = element_rect(fill = "white"),
+        legend.position = "right") +
+  scale_fill_discrete(name = "Unit type", lab = c("CCU", "MICU", "SICU", "Special nursery"))
+```
+
+#### Principal operations performed on each group
+
+**Top 10 operations for each service**
+
+```{r}
+cardiac_top_op = subset(omega_cardio, !is.na(OP_DESC))
+ortho_top_op = subset(omega_ortho, !is.na(OP_DESC))
+
+# cardiac
+cardiac_top_op = cardiac_top_op %>% 
+  group_by(OP_DESC) %>% 
+  dplyr::summarise(count = n(),
+                   prop = n()/nrow(omega_cardio) * 100) %>% 
+  arrange(desc(count)) %>% 
+  top_n(10)
+kable(cardiac_top_op, digits = 2, col.names = c("Cardiac operation", "Number of patients", "Percentage of patients"))
+
+# orthopedic
+ortho_top_op = ortho_top_op %>% 
+  group_by(OP_DESC) %>% 
+  dplyr::summarise(count = n(),
+                   prop = n()/nrow(omega_ortho) * 100) %>% 
+  arrange(desc(count)) %>% 
+  top_n(10)
+kable(ortho_top_op, digits = 2, col.names = c("Orthopedic operation", "Number of patients", "Percentage of patients"))
+```
+
+**Number of patients with operations**
+
+```{r}
+num_op = omega %>% 
+  filter(SERVICE %in% c("Cardiology", "Orthopedic")) %>%
+  group_by(SERVICE) %>%
+  dplyr::summarise(num_op = sum(!is.na(OP_DESC)))
+num_op$prop = ifelse(num_op$SERVICE == "Cardiology", num_op$num_op/nrow(omega_cardio)*100, num_op$num_op/nrow(omega_ortho)*100)
+kable(num_op, digits = 2, col.names = c("Service", "Number of patients having operations", "Percentage of patients having operations"))
+```
+
+**Average number of operations performed**
+
+```{r}
+ome_px_service = merge(ome_px, omega, by = c("PAT_NO", "ADM_DATE", "DIS_DATE"), all.x = TRUE) 
+ome_px_first = ome_px_service[ome_px_service$OCCURRENCE == 1,]
+avg_op = ome_px_first %>% 
+  filter(!is.na(SERVICE)) %>%
+  group_by(SERVICE) %>%
+  dplyr::summarise(total = sum(TOT_NO_OPS),
+                   count = n()) %>%
+  mutate(avg_op = total/count) %>%
+  select(SERVICE, avg_op)
+
+ggplot(data = avg_op, 
+       mapping = aes(x = reorder(SERVICE, avg_op), y = avg_op, fill = SERVICE)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Average number of operations by service") + 
+  xlab("Service") + 
+  ylab("Average number of operations") + 
+  scale_fill_manual(values = c(rep("darkgrey", 3), "red", rep("darkgrey", 13), "dodgerblue", rep("darkgrey", 9))) + 
+  guides(fill = FALSE) + 
+  coord_flip() + 
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+## III. Finanical viability
+
+#### Profitability of patients from cardiac and orthopedic services
+
+```{r}
+omega_serv$PROFIT = omega_serv$TOT_PAY - omega_serv$TOT_COST
+
+profit = omega_serv %>% 
+  group_by(SERVICE) %>% 
+  dplyr::summarise(avg_prof = mean(PROFIT, na.rm = TRUE))
+
+profit_co = profit %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic"))
+kable(profit_co, digits = 2, col.names = c("Service", "Profitability"))
+
+ggplot(data = profit, 
+       mapping = aes(x = reorder(SERVICE, avg_prof), y = avg_prof, fill = SERVICE)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Profitability by service") + 
+  xlab("Service") + 
+  ylab("Profitability") + 
+  scale_fill_manual(values = c(rep("darkgrey", 3), "red", rep("darkgrey", 13), "dodgerblue", rep("darkgrey", 9))) + 
+  guides(fill = FALSE) + 
+  coord_flip() + 
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  geom_hline(yintercept = mean(omega_serv$PROFIT, na.rm = TRUE), lty = 2)
+```
+
+#### LOS outlier rates
+
+```{r}
+omega_co = subset(omega, SERVICE %in% c("Cardiology", "Orthopedic"))
+ggplot(omega_co, aes(x = SERVICE, y = LOS)) +
+  geom_boxplot() + 
+  theme_bw() +
+  ggtitle("LOS by service: Cardiology and Orthopedic") +
+  xlab("Service") +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+```{r}
+los_outlier_i = omega_serv %>% 
+  group_by(SERVICE) %>%
+  mutate(OUTLIER = ifelse(LOS > quantile(LOS, 0.75) + 1.5*IQR(LOS) | LOS < quantile(LOS, 0.25) - 1.5*IQR(LOS), 1, 0))
+
+los_outlier = los_outlier_i %>% 
+  group_by(SERVICE) %>% 
+  dplyr::summarise(lor = mean(OUTLIER)*100)
+
+los_outlier_co = los_outlier %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic"))
+kable(los_outlier_co, digits = 2, col.names = c("Service", "LOS outlier rate"))
+
+ggplot(data = los_outlier, 
+       mapping = aes(x = reorder(SERVICE, lor), y = lor, fill = SERVICE)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("LOS outlier rate by service") + 
+  xlab("Service") + 
+  ylab("LOS outlier rate") + 
+  scale_fill_manual(values = c(rep("darkgrey", 3), "red", rep("darkgrey", 13), "dodgerblue", rep("darkgrey", 9))) + 
+  guides(fill = FALSE) + 
+  coord_flip() + 
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  geom_hline(yintercept = mean(los_outlier_i$OUTLIER, na.rm = TRUE)*100, lty = 2)
+```
+
+\newpage
+
+#### payer mix
+
+**MAJOR PAYOR**
+
+```{r}
+cardio_major = omega_cardio %>% 
+  group_by(MAJOR_PAY) %>% 
+  dplyr::summarise(count = n())
+cardio_major$perc = cardio_major$count/nrow(omega_cardio) * 100
+kable(cardio_major, digits = 2, col.names = c("Major payor", "Number of patients", "Percentage of patients"))
+
+ortho_major = omega_ortho %>% 
+  group_by(MAJOR_PAY) %>% 
+  dplyr::summarise(count = n())
+ortho_major$perc = ortho_major$count/nrow(omega_ortho) * 100
+kable(ortho_major, digits = 2, col.names = c("Major payor", "Number of patients", "Percentage of patients"))
+
+major = omega_serv %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic")) %>%
+  group_by(SERVICE, MAJOR_PAY) %>%
+  dplyr::summarise(count = n())
+major$perc = ifelse(major$SERVICE == "Cardiology", major$count/nrow(omega_cardio) * 100, major$count/nrow(omega_ortho) * 100)
+
+ggplot(data = major, 
+       mapping = aes(x = SERVICE, y = perc, fill = as.factor(MAJOR_PAY))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  ggtitle("Percentage of patients by major payor by service") +
+  xlab("Service") +
+  ylab("Percentage of patients") +
+  scale_fill_discrete(name = "Major payor", lab = c("Blue Cross", "Medicaid", "Medicare", "Private/Commercial")) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+\newpage
+
+**PRIMARY PAYOR**
+
+```{r}
+cardio_primary = omega_cardio %>% 
+  group_by(PRIM_PAY) %>% 
+  dplyr::summarise(count = n())
+cardio_primary$perc = cardio_primary$count/nrow(omega_cardio) * 100
+kable(cardio_primary, digits = 2, col.names = c("Primary payor", "Number of patients", "Percentage of patients"))
+
+ortho_primary = omega_ortho %>% 
+  group_by(PRIM_PAY) %>% 
+  dplyr::summarise(count = n())
+ortho_primary$perc = ortho_primary$count/nrow(omega_ortho) * 100
+kable(ortho_primary, digits = 2, col.names = c("Primary payor", "Number of patients", "Percentage of patients"))
+
+primary = omega_serv %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic")) %>%
+  group_by(SERVICE, PRIM_PAY) %>%
+  dplyr::summarise(count = n())
+primary$perc = ifelse(primary$SERVICE == "Cardiology", primary$count/nrow(omega_cardio) * 100, primary$count/nrow(omega_ortho) * 100)
+
+ggplot(data = primary, 
+       mapping = aes(x = SERVICE, y = perc, fill = as.factor(PRIM_PAY))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  ggtitle("Percentage of patients by primary payor by service") +
+  xlab("Service") +
+  ylab("Percentage of patients") +
+  scale_fill_discrete(name = "Primary payor", lab = c("Blue Cross", "Commercial", "Medicaid", "Medicare", "Private", "Workers' compensation")) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+\newpage
+
+**SECONDARY PAYOR**
+
+```{r}
+cardio_secondary = omega_cardio %>% 
+  group_by(SEC_PAY) %>% 
+  dplyr::summarise(count = n())
+cardio_secondary$perc = cardio_secondary$count/nrow(omega_cardio) * 100
+kable(cardio_secondary, digits = 2, col.names = c("Secondary payor", "Number of patients", "Percentage of patients"))
+
+ortho_secondary = omega_ortho %>% 
+  group_by(SEC_PAY) %>% 
+  dplyr::summarise(count = n())
+ortho_secondary$perc = ortho_secondary$count/nrow(omega_ortho) * 100
+kable(ortho_secondary, digits = 2, col.names = c("Secondary payor", "Number of patients", "Percentage of patients"))
+
+secondary = omega_serv %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic")) %>%
+  group_by(SERVICE, SEC_PAY) %>%
+  dplyr::summarise(count = n())
+secondary$perc = ifelse(secondary$SERVICE == "Cardiology", secondary$count/nrow(omega_cardio) * 100, secondary$count/nrow(omega_ortho) * 100)
+
+ggplot(data = secondary, 
+       mapping = aes(x = SERVICE, y = perc, fill = as.factor(SEC_PAY))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  ggtitle("Percentage of patients by secondary payor by service") +
+  xlab("Service") +
+  ylab("Percentage of patients") +
+  scale_fill_discrete(name = "Secondary payor", lab = c("Blue Cross", "Commercial", "Medicaid", "Medicare", "Not recorded", "Private")) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+\newpage
+
+#### Rates of emergent vs. elective care
+
+```{r}
+cardio_admtype = omega_cardio %>% 
+  group_by(ADM_TYPE) %>% 
+  filter(ADM_TYPE != 0) %>%
+  dplyr::summarise(count = n()) 
+cardio_admtype$perc = cardio_admtype$count/nrow(omega_cardio) * 100
+kable(cardio_admtype, digits = 2, col.names = c("Admission type", "Number of patients", "Percentage of patients"))
+
+ortho_admtype = omega_ortho %>% 
+  group_by(ADM_TYPE) %>% 
+  filter(ADM_TYPE != 0) %>%
+  dplyr::summarise(count = n())
+ortho_admtype$perc = ortho_admtype$count/nrow(omega_ortho) * 100
+kable(ortho_admtype, digits = 2, col.names = c("Admission type", "Number of patients", "Percentage of patients"))
+
+admtype = omega_serv %>%
+  filter(SERVICE %in% c("Cardiology", "Orthopedic")) %>%
+  filter(ADM_TYPE != 0) %>%
+  group_by(SERVICE, ADM_TYPE) %>%
+  dplyr::summarise(count = n())
+admtype$perc = ifelse(admtype$SERVICE == "Cardiology", admtype$count/nrow(omega_cardio) * 100, admtype$count/nrow(omega_ortho) * 100)
+
+ggplot(data = admtype, 
+       mapping = aes(x = SERVICE, y = perc, fill = as.factor(ADM_TYPE))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  ggtitle("Percentage of patients by admission type by service") +
+  xlab("Service") +
+  ylab("Percentage of patients") +
+  scale_fill_discrete(name = "Admission type", lab = c("Elective", "Emergent")) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```

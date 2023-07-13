@@ -1,0 +1,108 @@
+---
+title: "HMP 669 Project"
+author: "Annie Kwon"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# load libraries
+
+```{r}
+library(readxl)
+```
+
+# load datasets
+
+```{r}
+dat_9dx11 = read_xlsx("9DX11.xlsx")
+dat_9op11 = read_xlsx("9OP11.xlsx")
+crit = read_xlsx("CRIT.xlsx")
+dispostn = read_xlsx("DISPOSTN.xlsx")
+drg = read_xlsx("DRG.xlsx")
+ome_dx = read_xlsx("OME_DX.xlsx")
+ome_px = read_xlsx("OME_PX.xlsx")
+omega = read_xlsx("OMEGA.xlsx")
+organ = read_xlsx("ORGAN.xlsx")
+service = read_xlsx("SERVICE.xlsx")
+source = read_xlsx("SOURCE.xlsx")
+tissue = read_xlsx("TISSUE.xlsx")
+yes_no = read_xlsx("YES_NO.xlsx") # irrelevant?
+mdc = read_xlsx("MDC_List.xlsx")
+```
+
+# data cleaning
+
+```{r}
+# remove duplicate rows
+dat_9dx11 = dat_9dx11[!duplicated(dat_9dx11), ]
+dat_9op11 = dat_9op11[!duplicated(dat_9op11), ]
+crit = crit[!duplicated(crit), ]
+dispostn = dispostn[!duplicated(dispostn), ]
+drg = drg[!duplicated(drg), ]
+ome_dx = ome_dx[!duplicated(ome_dx), ]
+ome_px = ome_px[!duplicated(ome_px), ]
+omega = omega[!duplicated(omega), ]
+organ = organ[!duplicated(organ), ]
+service = service[!duplicated(service), ]
+source = source[!duplicated(source), ]
+tissue = tissue[!duplicated(tissue), ]
+yes_no = yes_no[!duplicated(yes_no), ]
+```
+
+```{r}
+# get rid of don't use columns
+dat_9dx11 = subset(dat_9dx11, select = -c(DIAG_C, DIAG_5))
+dat_9op11 = subset(dat_9op11, select = -c(OP_C))
+crit = subset(crit, select = -c(PAT_NO_TAG))
+ome_px = subset(ome_px, select = -c(ASA))
+omega = subset(omega, select = -c(WEIGHT, LOS_HRS, ADDL_SVC, COMP_PAY, BILLING_NO, PAT_TYPE))
+```
+
+```{r}
+# merge datasets with OMEGA
+omega = merge(omega, tissue, by = "TISSUE", all.x = TRUE) # tissue
+colnames(omega)[ncol(omega)] = "TISSUE_DESCRIPT"
+omega = merge(omega, organ, by = "ORGAN_DON", all.x = TRUE) # organ
+colnames(omega)[ncol(omega)] = "ORGAN_DESCRIPT"
+omega = merge(omega, source, by = "ADM_SOURCE", all.x = TRUE) # source
+colnames(omega)[ncol(omega)] = "SOURCE_DESCRIPT"
+omega = merge(omega, dispostn, by = "DISPOSTN", all.x = TRUE) # dispostn
+colnames(omega)[ncol(omega)] = "DISPOSTN_DESCRIPT"
+omega = merge(omega, service, by.x = "ADM_SVC", by.y = "SERVICE", all.x = TRUE) # service
+colnames(omega)[ncol(omega)] = "ADM_SVC_DESCRIPT"
+omega = merge(omega, service, by.x = "DIS_SVC", by.y = "SERVICE", all.x = TRUE) # service
+colnames(omega)[ncol(omega)] = "DIS_SVC_DESCRIPT"
+omega = merge(omega, service, by.x = "PHYS_A_SPC", by.y = "SERVICE", all.x = TRUE) # service
+colnames(omega)[ncol(omega)] = "PHYS_A_SPC_DESCRIPT"
+omega = merge(omega, dat_9dx11, by.x = "PRINCPL_DX", by.y = "DIAG", all.x = TRUE) # 9dx11
+omega = merge(omega, dat_9op11, by.x = "PRINCPL_OP", by.y = "OP", all.x = TRUE) # 9dx11 
+     
+drg = drg[c(1:10, 20, 30, 40, 50:492),]
+omega = merge(omega, drg, by = "DRG", all.x = TRUE) # drg -- some drg codes are under 2 different services - take the second of 2 (otherwise they are all 1)
+omega = merge(omega, mdc, by.x = "MAJ_DX_CAT", by.y = "Code", all.x = TRUE) # mdc
+colnames(omega)[ncol(omega)] = "SERVICE"
+```
+
+```{r}
+# not merged, but can use separately
+## crit
+## ome_px
+## ome_dx
+
+# subset dataset to Cardiology and Orthopedics
+omega_cardio = subset(omega, SERVICE == "Cardiology")
+omega_ortho = subset(omega, SERVICE == "Orthopedic")
+omega_other = subset(omega, !(SERVICE %in% c("Cardiology", "Orthopedic")))
+omega_serv = subset(omega, !is.na(SERVICE))
+```
+
+```{r}
+write.csv(omega, "omega.csv", row.names = FALSE)
+write.csv(omega_cardio, "omega_cardio.csv", row.names = FALSE)
+write.csv(omega_ortho, "omega_ortho.csv", row.names = FALSE)
+write.csv(omega_other, "omega_other.csv", row.names = FALSE)
+write.csv(crit, "crit_cleaned.csv", row.names = FALSE)
+write.csv(ome_px, "ome_px_cleaned.csv", row.names = FALSE)
+write.csv(ome_dx, "ome_dx_cleaned.csv", row.names = FALSE)
+write.csv(omega_serv, "omega_serv.csv", row.names = FALSE)
+```
